@@ -14,6 +14,7 @@ function clientLog(obj){
 
 const el = (id) => document.getElementById(id);
 const storeKey = (k) => `cardgame:${roomId}:${k}`;
+const sessionKey = `cardgame:session:${roomId}`;
 
 let me = { playerId: null, secret: null };
 let snapshot = null;
@@ -41,6 +42,48 @@ function getLocal() {
 function saveLocal(playerId, secret) {
   localStorage.setItem(storeKey("playerId"), playerId);
   localStorage.setItem(storeKey("secret"), secret);
+}
+
+function saveSessionInfo(playerId, name) {
+  try {
+    localStorage.setItem(sessionKey, JSON.stringify({ playerId, name }));
+  } catch {}
+}
+
+function getSessionInfo() {
+  try {
+    const raw = localStorage.getItem(sessionKey);
+    if (!raw) return { playerId: null, name: null };
+    const parsed = JSON.parse(raw);
+    return { playerId: parsed?.playerId || null, name: parsed?.name || null };
+  } catch {
+    return { playerId: null, name: null };
+  }
+}
+
+function renderRejoinList(players = []) {
+  const wrap = el("rejoinList");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  if (!players || players.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "text-xs text-slate-500";
+    empty.textContent = "(no players yet)";
+    wrap.appendChild(empty);
+    return;
+  }
+  for (const p of players) {
+    const btn = document.createElement("button");
+    btn.className = "px-3 py-2 rounded-xl border bg-white shadow-sm hover:scale-[1.01] active:scale-[0.99] transition text-left";
+    const seat = p.seat ? `#${p.seat}` : "?";
+    const status = p.online ? "🟢 online" : "⚪ offline";
+    btn.innerHTML = `<div class="text-sm font-semibold">${seat} ${escapeHtml(p.name)}</div><div class="text-[11px] text-slate-500">${status}</div>`;
+    btn.addEventListener("click", () => {
+      clientLog({ level: "info", message: "player_claim_emit", roomId, playerId: p.id });
+      socket.emit("player_claim", { roomId, playerId: p.id });
+    });
+    wrap.appendChild(btn);
+  }
 }
 
 function render(snapshot) {
@@ -208,6 +251,11 @@ wrap.appendChild(list);
   el("btnGive").classList.toggle("cursor-not-allowed", !canGive);
 }
 
+function findPlayerName(snap, playerId) {
+  const p = (snap?.players || []).find(x => x.id === playerId);
+  return p ? p.name : null;
+}
+
 function toast(html, variant="info") {
   const wrap = document.getElementById("toasts");
   if (!wrap) return;
@@ -313,6 +361,15 @@ function showError(msg) {
   el("joinErr").textContent = msg;
 }
 
+async function loadPlayersList() {
+  try {
+    const res = await fetch(`/api/rooms/${roomId}/players`);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderRejoinList(data.players || []);
+  } catch {}
+}
+
 el("btnJoin").addEventListener("click", () => {
   const name = el("name").value.trim();
   if (!name) return showError("Enter name");
@@ -338,11 +395,22 @@ socket.on("joined", ({ playerId, secret, snapshot }) => {
   me.playerId = playerId;
   me.secret = secret;
   saveLocal(playerId, secret);
+  saveSessionInfo(playerId, findPlayerName(snapshot, playerId) || el("name")?.value?.trim());
   showJoin(false);
   render(snapshot);
 });
 
 socket.on("resume_ok", ({ snapshot }) => {
+  if (me.playerId) saveSessionInfo(me.playerId, findPlayerName(snapshot, me.playerId));
+  showJoin(false);
+  render(snapshot);
+});
+
+socket.on("claimed", ({ playerId, secret, snapshot }) => {
+  me.playerId = playerId;
+  me.secret = secret;
+  saveLocal(playerId, secret);
+  saveSessionInfo(playerId, findPlayerName(snapshot, playerId));
   showJoin(false);
   render(snapshot);
 });
@@ -351,10 +419,12 @@ socket.on("resume_fail", ({ reason }) => {
   console.warn("resume_fail", reason);
   // show join box
   showJoin(true);
+  loadPlayersList();
 });
 
 socket.on("room_state", ({ snapshot: snap }) => {
   snapshot = snap;
+  renderRejoinList(snap.players || []);
   detectSetEvents(snap);
   render(snap);
 });
@@ -373,6 +443,10 @@ socket.on("game_finished", () => {
 socket.on("error_msg", ({ error }) => {
   console.error(error);
   showError(error);
+  if (error === "player_not_found" || error === "room_not_found") {
+    showJoin(true);
+    loadPlayersList();
+  }
 });
 
 function startSpinner(seed, durationMs) {
@@ -409,6 +483,12 @@ function startSpinner(seed, durationMs) {
 // Try resume on load
 (() => {
   setText("roomBadge", `Room: ${roomId || "-"}`);
+  loadPlayersList();
+  const { playerId: sessionPid } = getSessionInfo();
+  if (sessionPid) {
+    socket.emit("player_claim", { roomId, playerId: sessionPid });
+    return;
+  }
   const { playerId, secret } = getLocal();
   if (playerId && secret) {
     me.playerId = playerId; me.secret = secret;
