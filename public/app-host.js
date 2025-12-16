@@ -212,7 +212,14 @@ const ps = snapshot.publicSets || {};
 const list = document.createElement("div");
 list.className = "space-y-2";
 
-for (const p of snapshot.players) {
+const playerList = [...snapshot.players].sort((a, b) => {
+  const sa = a.seat ?? 999;
+  const sb = b.seat ?? 999;
+  if (sa === sb) return a.name.localeCompare(b.name);
+  return sa - sb;
+});
+
+for (const p of playerList) {
   const isActive = p.id === snapshot.activePlayerId;
   const info = ps[p.id] || {};
   const byType = info.byType || {};
@@ -234,6 +241,7 @@ for (const p of snapshot.players) {
   row.innerHTML = `
     <div class="min-w-0">
       <div class="flex items-center gap-2">
+        ${p.seat ? `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-900 text-white font-bold">#${p.seat}</span>` : ""}
         <div class="font-semibold text-lg truncate">${escapeHtml(p.name)}</div>
         ${isActive ? "<span class='text-xs px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 font-bold'>ACTIVE</span>" : ""}
         ${p.online ? "" : "<span class='text-xs text-slate-400'>(offline)</span>"}
