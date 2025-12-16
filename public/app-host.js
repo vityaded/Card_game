@@ -29,6 +29,42 @@ function absUrl(rel) {
   return `${location.origin}${rel}`;
 }
 
+function toast(msg) {
+  let wrap = document.getElementById("toasts");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "toasts";
+    wrap.className = "fixed top-3 left-1/2 -translate-x-1/2 z-50 space-y-2";
+    document.body.appendChild(wrap);
+  }
+  const div = document.createElement("div");
+  div.className = "px-4 py-2 rounded-2xl shadow-lg border bg-white/90 backdrop-blur text-slate-900 text-sm";
+  div.textContent = msg;
+  wrap.appendChild(div);
+  setTimeout(() => div.classList.add("opacity-0","translate-y-[-6px]","transition","duration-300"), 900);
+  setTimeout(() => div.remove(), 1200);
+}
+
+async function copyToClipboard(text) {
+  // must be called from a user gesture (button click)
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  // fallback for http / non-secure contexts
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  ta.style.top = "-9999px";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  return ok;
+}
+
 async function apiGet(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(await r.text());
@@ -103,14 +139,21 @@ async function renderMyRooms(){
       keep.push(id);
       const hostUrl = `/host.html?roomId=${id}`;
       const playerUrl = `/room.html?roomId=${id}`;
+      const playerUrlFull = `${location.origin}${playerUrl}`;
       rows.push(`
         <div class="border rounded-2xl p-2 bg-white/70 flex items-center justify-between gap-2">
           <div class="min-w-0">
             <div class="font-semibold">${id}</div>
             <div class="text-xs text-slate-600">${j.phase} · players ${j.playersCount} · active ${escapeHtml(j.activeName||'-')}</div>
-            <div class="text-xs text-slate-600 truncate">${location.origin}${playerUrl}</div>
+            <div class="text-xs text-slate-600 truncate">${playerUrlFull}</div>
           </div>
           <div class="flex gap-2 shrink-0">
+            <button
+              class="px-3 py-2 rounded-2xl bg-amber-400 text-slate-900 shadow text-sm"
+              data-copy="${playerUrlFull}"
+            >
+              Copy link
+            </button>
             <a class="px-3 py-2 rounded-2xl bg-blue-600 text-white shadow text-sm" href="${hostUrl}">Open</a>
           </div>
         </div>
@@ -119,6 +162,20 @@ async function renderMyRooms(){
   }
   saveMyRooms(keep);
   wrap.innerHTML = rows.join("") || '<div class="text-slate-500">(no active rooms)</div>';
+
+  wrap.querySelectorAll("button[data-copy]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const url = btn.dataset.copy;
+      try {
+        const ok = await copyToClipboard(url);
+        toast(ok ? "Copied link ✅" : "Copy failed ❌");
+      } catch {
+        toast("Copy failed ❌");
+      }
+    });
+  });
 }
 
 async function refreshTemplates() {
@@ -245,7 +302,12 @@ el("btnCopyLink").addEventListener("click", async () => {
   const a = el("playerLink")?.querySelector("a");
   const txt = a ? a.href : "";
   if (!txt) return;
-  try { await navigator.clipboard.writeText(txt); alert("Copied!"); } catch { prompt("Copy link:", txt); }
+  try {
+    const ok = await copyToClipboard(txt);
+    toast(ok ? "Copied link ✅" : "Copy failed ❌");
+  } catch {
+    toast("Copy failed ❌");
+  }
 });
 
 el("btnCreate").addEventListener("click", async () => {
