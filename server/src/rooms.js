@@ -22,8 +22,10 @@ export class RoomManager {
 
       players: new Map(), // playerId -> player
       order: [],
+      turnOrder: [],
       turnIndex: 0,
       activePlayerId: null,
+      startedAt: null,
 
       deck: [],
       publicSets: new Map(),
@@ -61,7 +63,8 @@ export class RoomManager {
       secret,
       socketId: null,
       handCounts: new Map(),
-      setsCount: 0
+      setsCount: 0,
+      seat: null,
     };
     room.players.set(playerId, player);
     this.touch(room);
@@ -98,10 +101,17 @@ export class RoomManager {
 
     // order randomized
     room.order = [...room.players.keys()];
+    room.turnOrder = [...room.order];
     for (let i = room.order.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [room.order[i], room.order[j]] = [room.order[j], room.order[i]];
     }
+
+    room.turnOrder = [...room.order];
+    room.turnOrder.forEach((pid, i) => {
+      const p = room.players.get(pid);
+      if (p) p.seat = i + 1;
+    });
 
     // reset hands/sets
     room.publicSets = new Map();
@@ -122,6 +132,7 @@ export class RoomManager {
     // check any immediate sets (rare but possible)
     for (const pid of room.order) checkSets(room, pid);
 
+    room.startedAt = nowMs();
     room.phase = "active";
     this.touch(room);
     return { room, spinner };
@@ -133,14 +144,17 @@ export class RoomManager {
     room.phase = "lobby";
     room.templateId = templateId || room.templateId;
     room.order = [];
+    room.turnOrder = [];
     room.turnIndex = 0;
     room.activePlayerId = null;
     room.deck = [];
     room.publicSets = new Map();
     room.turnTracker = null;
+    room.startedAt = null;
     for (const p of room.players.values()) {
       p.handCounts = new Map();
       p.setsCount = 0;
+      p.seat = null;
     }
     this.touch(room);
     return room;
@@ -165,6 +179,7 @@ export class RoomManager {
     room.players.delete(playerId);
     // remove from order if active game
     room.order = room.order.filter(x => x !== playerId);
+    room.turnOrder = room.turnOrder.filter(x => x !== playerId);
     if (room.activePlayerId === playerId) {
       room.activePlayerId = room.order[room.turnIndex % Math.max(1, room.order.length)] || null;
     }
@@ -195,6 +210,7 @@ export function snapshotForHost(room) {
   for (const p of room.players.values()) {
     players.push({
       id: p.id, name: p.name,
+      seat: p.seat || null,
       hand: Object.fromEntries([...p.handCounts.entries()].map(([k,v]) => [String(k), v])),
       handTotal: handTotal(p.handCounts),
       setsCount: p.setsCount,
@@ -209,6 +225,7 @@ export function snapshotForHost(room) {
     templateId: room.templateId,
     players,
     order: room.order,
+    turnOrder: room.turnOrder,
     activePlayerId: room.activePlayerId,
     deckCount: room.deck.length,
     publicSets
@@ -220,6 +237,7 @@ export function snapshotForPlayer(room, playerId) {
   for (const p of room.players.values()) {
     players.push({
       id: p.id, name: p.name,
+      seat: p.seat || null,
       handTotal: handTotal(p.handCounts),
       setsCount: p.setsCount,
       online: !!p.socketId
@@ -236,6 +254,7 @@ export function snapshotForPlayer(room, playerId) {
     templateId: room.templateId,
     players,
     order: room.order,
+    turnOrder: room.turnOrder,
     activePlayerId: room.activePlayerId,
     deckCount: room.deck.length,
     publicSets,

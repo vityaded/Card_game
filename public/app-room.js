@@ -51,6 +51,21 @@ function render(snapshot) {
   const activeName = snapshot.players.find(p => p.id === snapshot.activePlayerId)?.name || "-";
   setText("active", activeName);
 
+  const askNextEl = el("askNext");
+  if (askNextEl) {
+    let askNextTxt = "";
+    if (snapshot.phase === "active" && Array.isArray(snapshot.turnOrder) && snapshot.turnOrder.length > 0) {
+      const idx = snapshot.turnOrder.indexOf(snapshot.activePlayerId);
+      if (idx >= 0) {
+        const nextId = snapshot.turnOrder[(idx + 1) % snapshot.turnOrder.length];
+        const nextP = snapshot.players.find(p => p.id === nextId);
+        if (nextP) askNextTxt = `Ask next: #${nextP.seat || "?"} ${nextP.name}`;
+      }
+    }
+    askNextEl.textContent = askNextTxt;
+    askNextEl.classList.toggle("hidden", !askNextTxt);
+  }
+
   // Turn hint banner
   const hint = el("turnHint");
   if (hint) {
@@ -82,7 +97,14 @@ const list = document.createElement("div");
 list.className = "space-y-2";
 const ps = snapshot.publicSets || {};
 
-for (const p of snapshot.players) {
+const playerList = [...snapshot.players].sort((a, b) => {
+  const sa = a.seat ?? 999;
+  const sb = b.seat ?? 999;
+  if (sa === sb) return a.name.localeCompare(b.name);
+  return sa - sb;
+});
+
+for (const p of playerList) {
   const isActive = p.id === snapshot.activePlayerId;
   const isMe = p.id === me.playerId;
 
@@ -106,6 +128,7 @@ for (const p of snapshot.players) {
   row.innerHTML = `
     <div class="min-w-0">
       <div class="flex items-center gap-2">
+        ${p.seat ? `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-900 text-white font-bold">#${p.seat}</span>` : ""}
         <div class="text-lg font-semibold truncate">${escapeHtml(p.name)} ${isMe ? "<span class='text-xs px-2 py-0.5 rounded-full bg-blue-600 text-white'>you</span>" : ""}</div>
         ${isActive ? "<div class='text-xs px-2 py-0.5 rounded-full bg-amber-400 text-slate-900 font-bold'>ACTIVE</div>" : ""}
       </div>
