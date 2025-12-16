@@ -53,8 +53,47 @@ app.use(express.static(path.resolve("public")));
 const upload = multer({ dest: path.resolve("server/data/_uploads") });
 
 // API: rooms
+function ensureTemplateReady(templateId) {
+  if (!templateId) return null;
+  const t = loadTemplate(templateId);
+  if (!t) throw new Error("template_not_found");
+  if (t.meta?.status && t.meta.status !== "ready") throw new Error("template_not_ready");
+  return t;
+}
+
 app.get("/api/rooms/create", (req, res) => {
-  const room = rooms.createRoom();
+  try {
+    const templateId = req.query?.templateId;
+    ensureTemplateReady(templateId);
+    const room = rooms.createRoom(templateId);
+    log("ROOM_CREATE", { templateId: templateId || null, roomId: room.id });
+    res.json({
+      roomId: room.id,
+      templateId: room.templateId,
+      hostUrl: `/host.html?roomId=${room.id}`,
+      playerUrl: `/room.html?roomId=${room.id}`
+    });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post("/api/rooms/create", (req, res) => {
+  try {
+    const templateId = req.body?.templateId;
+    ensureTemplateReady(templateId);
+    const room = rooms.createRoom(templateId);
+    log("ROOM_CREATE", { templateId: templateId || null, roomId: room.id });
+    res.json({
+      roomId: room.id,
+      templateId: room.templateId,
+      hostUrl: `/host.html?roomId=${room.id}`,
+      playerUrl: `/room.html?roomId=${room.id}`
+    });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
 
 // Client logs (room.html inline + app-room.js)
 app.post("/api/client-log", express.json({ limit: "200kb" }), (req, res) => {
@@ -62,7 +101,6 @@ app.post("/api/client-log", express.json({ limit: "200kb" }), (req, res) => {
   log("client", payload);
   res.json({ ok: true });
 });
-
 
 // API: room summary (for host dashboard)
 app.get("/api/rooms/:roomId/summary", (req, res) => {
@@ -80,7 +118,8 @@ app.get("/api/rooms/:roomId/summary", (req, res) => {
     playersCount: room.players.size,
     activeName,
     deckCount: room.deck.length,
-    lastActivityAt: room.lastActivityAt
+    lastActivityAt: room.lastActivityAt,
+    templateId: room.templateId || null,
   });
 });
 
@@ -102,16 +141,11 @@ app.get("/api/rooms/:roomId/players", (req, res) => {
   res.json({ roomId: room.id, phase: room.phase, players });
 });
 
-  res.json({
-    roomId: room.id,
-    hostUrl: `/host.html?roomId=${room.id}`,
-    playerUrl: `/room.html?roomId=${room.id}`
-  });
-});
-
 // API: templates
 app.get("/api/templates", (req, res) => {
-  res.json({ templates: listTemplates() });
+  const list = listTemplates({ onlyReady: true });
+  log("TEMPLATES_LIST", { count: list.length });
+  res.json(list);
 });
 
 app.post("/api/templates/draft", upload.single("file"), async (req, res) => {

@@ -11,7 +11,7 @@ function ensureDirs() {
 
 function templateDir(id) { return path.join(TEMPLATES_DIR, id); }
 
-export function listTemplates() {
+export function listTemplates({ onlyReady = false } = {}) {
   ensureDirs();
   const ids = fs.readdirSync(TEMPLATES_DIR, { withFileTypes: true })
     .filter(d => d.isDirectory())
@@ -25,7 +25,17 @@ export function listTemplates() {
       const meta = JSON.parse(fs.readFileSync(metaPath, "utf-8"));
       const rawGrid = JSON.parse(fs.readFileSync(gridPath, "utf-8"));
       const grid = gridObject(rawGrid);
-      templates.push({ id, name: meta.name, status: meta.status || "ready", updatedAt: meta.updatedAt, grid });
+      const status = meta.status || "ready";
+      if (onlyReady && status !== "ready") continue;
+      templates.push({
+        id,
+        name: meta.name || id,
+        status,
+        createdAt: meta.createdAt || meta.updatedAt || 0,
+        updatedAt: meta.updatedAt || meta.createdAt || 0,
+        grid,
+        thumbUrl: `/api/templates/${id}/slice/0`
+      });
     } catch {}
   }
   templates.sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0));
