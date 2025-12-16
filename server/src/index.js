@@ -44,7 +44,7 @@ const io = new Server(server, {
   cors: { origin: "*" }
 });
 
-const rooms = new RoomManager(io);
+const rooms = new RoomManager(io, log);
 
 // Static public
 app.use(express.static(path.resolve("public")));
@@ -82,6 +82,24 @@ app.get("/api/rooms/:roomId/summary", (req, res) => {
     deckCount: room.deck.length,
     lastActivityAt: room.lastActivityAt
   });
+});
+
+app.get("/api/rooms/:roomId/players", (req, res) => {
+  const roomId = String(req.params.roomId || "").toUpperCase();
+  const room = rooms.get(roomId);
+  if (!room) return res.status(404).json({ roomId, exists: false });
+  const players = [...room.players.values()].map(p => ({
+    id: p.id,
+    name: p.name,
+    seat: p.seat,
+    online: !!p.socketId,
+  })).sort((a, b) => {
+    const sa = a.seat ?? 999;
+    const sb = b.seat ?? 999;
+    if (sa === sb) return a.name.localeCompare(b.name);
+    return sa - sb;
+  });
+  res.json({ roomId: room.id, phase: room.phase, players });
 });
 
   res.json({
@@ -174,14 +192,26 @@ socket.on("client_log", (payload) => {
     log("player_join", { socketId: socket.id });
 
     try {
-      const { room, player } = rooms.addPlayer(roomId, name);
-      player.socketId = socket.id;
+      const { room, player, reclaimed, dealt } = rooms.addPlayer(roomId, name);
+      rooms.bindPlayerSocket(room, player, socket.id);
       socket.join(roomId);
-      socket.emit("joined", {
-        playerId: player.id,
-        secret: player.secret,
-        snapshot: snapshotForPlayer(room, player.id)
-      });
+      if (reclaimed) {
+        log("CLAIM", { room: room.id, player: player.name, pid: player.id, newSocket: socket.id });
+        socket.emit("claimed", {
+          playerId: player.id,
+          secret: player.secret,
+          snapshot: snapshotForPlayer(room, player.id)
+        });
+      } else {
+        if (room.phase === "active") {
+          log("LATE_JOIN", { room: room.id, name: player.name, seat: player.seat, dealt, deckLeft: room.deck.length });
+        }
+        socket.emit("joined", {
+          playerId: player.id,
+          secret: player.secret,
+          snapshot: snapshotForPlayer(room, player.id)
+        });
+      }
       // notify host and update everyone with correct per-socket snapshots
       broadcastState(room);
     } catch (e) {
@@ -195,6 +225,19 @@ socket.on("client_log", (payload) => {
     socket.join(roomId);
     socket.emit("resume_ok", { snapshot: snapshotForPlayer(r.room, playerId) });
     broadcastState(r.room);
+  });
+
+  socket.on("player_claim", ({ roomId, playerId }) => {
+    const room = rooms.get(roomId);
+    if (!room) return socket.emit("error_msg", { error: "room_not_found" });
+    const player = room.players.get(playerId);
+    if (!player) return socket.emit("error_msg", { error: "player_not_found" });
+    rooms.bindPlayerSocket(room, player, socket.id);
+    rooms.touch(room);
+    socket.join(roomId);
+    log("CLAIM", { room: room.id, player: player.name, pid: player.id, newSocket: socket.id });
+    socket.emit("claimed", { playerId: player.id, secret: player.secret, snapshot: snapshotForPlayer(room, player.id) });
+    broadcastState(room);
   });
 
   socket.on("game_start", ({ roomId, templateId }) => {
