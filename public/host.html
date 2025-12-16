@@ -49,34 +49,30 @@
       <div class="flex flex-col md:flex-row gap-3 md:items-end">
         <div class="flex-1">
           <label class="block text-sm font-medium">Template name</label>
-          <input id="tplName" class="w-full border rounded px-3 py-2" placeholder="Animals #1"/>
+          <input id="templateName" class="w-full border rounded px-3 py-2" placeholder="Animals #1"/>
         </div>
         <div class="flex-1">
-          <label class="block text-sm font-medium">Upload image</label>
-          <input id="tplFile" type="file" accept="image/*" class="w-full"/>
+          <label class="block text-sm font-medium">Choose file</label>
+          <input id="fileInput" type="file" accept="image/*" class="w-full"/>
         </div>
-        <button id="btnUpload" class="px-4 py-2 rounded-xl bg-green-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Upload</button>
       </div>
 
-      <div id="editorWrap" class="hidden space-y-2">
-        <div class="flex gap-2 items-center">
-          <button id="btnSaveGrid" class="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Save grid</button>
-          <button id="btnSlice" class="px-4 py-2 rounded-xl bg-indigo-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Slice 9 cards</button>
-          <div id="tplStatus" class="text-sm text-slate-600"></div>
-        </div>
+      <div id="uploadStatus" class="text-sm text-slate-600">Choose an image…</div>
 
-        <div class="grid gap-4 md:grid-cols-2">
-          <div>
-            <canvas id="gridCanvas" class="w-full border rounded"></canvas>
-            <div class="text-xs text-slate-600 mt-1">
-              Drag lines: 4 outer + 2 inner vertical + 2 inner horizontal.
-            </div>
-          </div>
-          <div>
-            <div class="text-sm font-medium mb-2">Slices preview</div>
-            <div id="slicePreview" class="grid grid-cols-3 gap-2"></div>
-          </div>
+      <div id="gridEditorWrap" class="hidden space-y-2">
+        <div class="text-xs text-slate-600">Drag lines to fit cards (4 outer + 2 inner vertical + 2 inner horizontal).</div>
+        <div>
+          <canvas id="gridCanvas" class="w-full border rounded"></canvas>
         </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="btnConfirmTemplate" disabled class="px-4 py-2 rounded-xl bg-indigo-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed">Confirm</button>
+      </div>
+
+      <div id="slicesPreviewWrap" class="hidden">
+        <div class="text-sm font-medium mb-2">Sliced 9 cards</div>
+        <div id="slicePreview" class="grid grid-cols-3 gap-2"></div>
       </div>
     </div>
 
