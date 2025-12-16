@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Room</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="min-h-screen text-slate-900" style="font-family: Fredoka, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: linear-gradient(135deg,#ecfeff,#fce7f3,#fff7ed);">
+  <div class="max-w-4xl mx-auto p-4 space-y-4">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-semibold">🎴 Card Game</h1>
+      <div id="roomBadge" class="text-sm px-3 py-1 rounded bg-slate-200">Room: -</div>
+    </div>
+
+    <div id="joinBox" class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 border border-white space-y-3">
+      <div class="font-semibold">Join</div>
+      <input id="name" class="w-full border rounded px-3 py-2" placeholder="Your name"/>
+      <button id="btnJoin" class="px-3 py-2 rounded bg-blue-600 text-white">Join room</button>
+      <div id="joinErr" class="text-sm text-rose-700"></div>
+    </div>
+
+    <div id="gameBox" class="hidden space-y-4">
+      <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 border border-white">
+        <div class="text-sm text-slate-600">
+          Phase: <span id="phase">-</span>,
+          Deck: <span id="deckCount">-</span>,
+          Active: <span id="active">-</span>
+        </div>
+        <div id="turnHint" class="mt-3 p-3 rounded-2xl border text-center text-lg font-semibold hidden"></div>
+        <div id="spinner" class="mt-3 hidden">
+          <div class="text-sm font-medium mb-2">Spinner</div>
+          <div id="spinnerBar" class="flex gap-1 flex-wrap"></div>
+        </div>
+      </div>
+
+      <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 border border-white">
+        <div class="font-medium mb-2">Players</div>
+        <div id="players" class="text-sm"></div>
+      </div>
+
+      <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 border border-white space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="font-medium">Your hand</div>
+          <div class="flex gap-2 items-center">
+            <button id="btnGive" class="px-4 py-3 rounded-2xl bg-green-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Give to active</button>
+            <button id="btnEnd" class="px-4 py-3 rounded-2xl bg-rose-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">End turn</button>
+          </div>
+        </div>
+        <div id="hand" class="grid grid-cols-3 gap-2"></div>
+        <div class="text-xs text-slate-600">
+          Select 1+ types, then “Give to active”. Transfers ALL copies for each selected type.
+        </div>
+      </div>
+
+      <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 border border-white">
+        <div class="font-medium mb-2">Sets (public)</div>
+        <div id="sets" class="text-sm"></div>
+      </div>
+    <div id="toasts" class="fixed top-3 left-1/2 -translate-x-1/2 z-50 space-y-2"></div>
+<div id="turnOverlay" class="fixed inset-0 z-[60] hidden">
+  <div class="absolute inset-0 bg-black/60"></div>
+  <div class="absolute inset-0 flex items-center justify-center p-6">
+    <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl border-4 border-amber-300 p-6 text-center animate-[pop_0.5s_ease-out]">
+      <div class="text-6xl">🎯</div>
+      <div class="mt-2 text-3xl font-extrabold text-amber-600">YOUR TURN!</div>
+      <div class="mt-2 text-slate-700 text-lg">Ask in Zoom, then players give you cards.</div>
+      <div class="mt-4 text-sm text-slate-500">(tap anywhere to close)</div>
+    </div>
+  </div>
+</div>
+
+<style>
+  @keyframes pop {
+    0% { transform: scale(0.75); opacity: 0; }
+    60% { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes wiggle {
+    0%,100% { transform: rotate(-2deg); }
+    50% { transform: rotate(2deg); }
+  }
+</style>
+
+</div>
+  </div>
+
+  <script>
+  (function(){
+    function send(payload){
+      try {
+        payload = Object.assign({ page: "room", ts: new Date().toISOString() }, payload||{});
+        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+        if (navigator.sendBeacon) { navigator.sendBeacon("/api/client-log", blob); return; }
+        fetch("/api/client-log", { method: "POST", headers: { "content-type":"application/json" }, body: JSON.stringify(payload) }).catch(()=>{});
+      } catch {}
+    }
+    window.addEventListener("error", function(e){
+      send({ level:"error", message: String(e.message||"error"), filename: e.filename, lineno: e.lineno, colno: e.colno, stack: e.error && e.error.stack });
+    });
+    window.addEventListener("unhandledrejection", function(e){
+      send({ level:"unhandledrejection", reason: String(e.reason), stack: e.reason && e.reason.stack });
+    });
+    window.__clientLog = send;
+    send({ level:"info", message:"room_loaded" });
+  })();
+</script>
+
+<script type="module" src="/app-room.js"></script>
+</body>
+</html>

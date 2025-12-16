@@ -1,0 +1,15 @@
+# deps
+node_modules/
+
+# logs
+*.log
+game.log
+logs/
+
+# local/env
+.env
+.env.*
+.DS_Store
+
+# runtime data (keep out of repo)
+server/data/

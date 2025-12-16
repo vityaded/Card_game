@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Host</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body class="min-h-screen text-slate-900" style="font-family: Fredoka, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: linear-gradient(135deg,#fff7ed,#ecfeff,#fce7f3);">
+  <div class="max-w-5xl mx-auto p-4 space-y-4">
+    <div class="flex items-center justify-between">
+      <h1 class="text-xl font-semibold">🎴 Card Game — Host</h1>
+      <div id="roomBadge" class="text-sm px-3 py-1 rounded bg-slate-200">Room: -</div>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 space-y-3 border border-white">
+        <h2 class="font-semibold">1) Create room</h2>
+        <button id="btnCreate" class="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Create game room</button>
+        <div class="text-sm text-slate-600">
+          Player link: <span id="playerLink" class="font-mono">-</span>
+        <button id="btnCopyLink" class="ml-2 px-3 py-1 rounded-xl bg-amber-400 text-slate-900 shadow hover:scale-[1.02] active:scale-[0.98] transition text-sm">Copy</button>
+        </div>
+
+
+<div class="mt-3 pt-3 border-t border-slate-200/60">
+  <div class="font-semibold">My active rooms</div>
+  <div id="myRooms" class="text-sm space-y-2 mt-2"></div>
+  <div class="text-xs text-slate-600">Shows rooms created in this browser (auto-refresh).</div>
+</div>
+      </div>
+
+      <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 space-y-3 border border-white">
+        <h2 class="font-semibold">2) Template library</h2>
+        <div class="flex gap-2">
+          <button id="btnRefreshTemplates" class="px-4 py-2 rounded-xl bg-slate-800 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Refresh</button>
+        </div>
+        <div id="templatesList" class="text-sm space-y-2"></div>
+      </div>
+    </div>
+
+    <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 space-y-3 border border-white">
+      <h2 class="font-semibold">3) Upload A4 and adjust grid</h2>
+
+      <div class="flex flex-col md:flex-row gap-3 md:items-end">
+        <div class="flex-1">
+          <label class="block text-sm font-medium">Template name</label>
+          <input id="tplName" class="w-full border rounded px-3 py-2" placeholder="Animals #1"/>
+        </div>
+        <div class="flex-1">
+          <label class="block text-sm font-medium">Upload image</label>
+          <input id="tplFile" type="file" accept="image/*" class="w-full"/>
+        </div>
+        <button id="btnUpload" class="px-4 py-2 rounded-xl bg-green-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Upload</button>
+      </div>
+
+      <div id="editorWrap" class="hidden space-y-2">
+        <div class="flex gap-2 items-center">
+          <button id="btnSaveGrid" class="px-4 py-2 rounded-xl bg-blue-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Save grid</button>
+          <button id="btnSlice" class="px-4 py-2 rounded-xl bg-indigo-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Slice 9 cards</button>
+          <div id="tplStatus" class="text-sm text-slate-600"></div>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <div>
+            <canvas id="gridCanvas" class="w-full border rounded"></canvas>
+            <div class="text-xs text-slate-600 mt-1">
+              Drag lines: 4 outer + 2 inner vertical + 2 inner horizontal.
+            </div>
+          </div>
+          <div>
+            <div class="text-sm font-medium mb-2">Slices preview</div>
+            <div id="slicePreview" class="grid grid-cols-3 gap-2"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-4 space-y-3 border border-white">
+      <h2 class="font-semibold">4) Lobby / Game</h2>
+      <div class="flex gap-2 items-center flex-wrap">
+        <button id="btnStart" class="px-4 py-2 rounded-xl bg-rose-600 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Start</button>
+        <button id="btnNewGame" class="px-4 py-2 rounded-xl bg-slate-700 text-white shadow hover:scale-[1.02] active:scale-[0.98] transition">Back to lobby</button>
+        <div class="text-sm text-slate-600">Selected template: <span id="selectedTpl" class="font-mono">-</span></div>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <div class="font-medium">Players</div>
+          <div id="playersTable" class="text-sm"></div>
+        </div>
+        <div>
+          <div class="font-medium">All hands (host view)</div>
+          <div id="handsView" class="text-sm space-y-2"></div>
+        </div>
+      </div>
+      <div class="text-sm text-slate-600">
+        Phase: <span id="phase">-</span>, Deck: <span id="deckCount">-</span>, Active: <span id="active">-</span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/ui-grid-editor.js"></script>
+  <script type="module" src="/app-host.js"></script>
+</body>
+</html>
