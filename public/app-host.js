@@ -8,9 +8,15 @@ const socket = io();
 const el = (id) => document.getElementById(id);
 
 let selectedTemplateId = null;
-let currentTemplateId = null;
 let editor = null;
 let roomSnapshot = null;
+
+const draft = {
+  templateId: null,
+  imageReady: false,
+  gridReady: false,
+  file: null,
+};
 
 const myRoomsKey = "cardgame:myRooms";
 function loadMyRooms(){
@@ -24,6 +30,11 @@ function addMyRoom(id){
 
 
 function setText(id, txt) { el(id).textContent = txt; }
+
+function setStatus(msg) {
+  const n = el("uploadStatus");
+  if (n) n.textContent = msg;
+}
 
 function absUrl(rel) {
   return `${location.origin}${rel}`;
@@ -75,6 +86,20 @@ async function apiPost(url, data) {
   const j = await r.json();
   if (!j.ok && j.ok !== undefined) throw new Error(j.error || "error");
   return j;
+}
+async function apiUpload(url, file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch(url, { method: "POST", body: fd });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || "upload_failed");
+  return j;
+}
+async function apiCreateTemplateDraft(file) {
+  return apiUpload("/api/templates/draft", file);
+}
+async function apiFinalizeTemplate({ templateId, name, grid }) {
+  return apiPost(`/api/templates/${templateId}/finalize`, { name, grid });
 }
 async function apiDelete(url) {
   const r = await fetch(url, { method: "DELETE" });
@@ -194,6 +219,57 @@ function renderSlices(templateId) {
     img.src = `/api/templates/${templateId}/slice/${i}?t=${Date.now()}`;
     wrap.appendChild(img);
   }
+}
+
+function makeDefaultGrid() {
+  return { x0: 0.05, x1: 0.35, x2: 0.65, x3: 0.95, y0: 0.05, y1: 0.35, y2: 0.65, y3: 0.95 };
+}
+
+function gridForEditor(grid) {
+  if (grid && Array.isArray(grid.x) && Array.isArray(grid.y)) return grid;
+  if (grid && ["x0","x1","x2","x3","y0","y1","y2","y3"].every(k => grid[k] !== undefined)) {
+    return { x: [grid.x0, grid.x1, grid.x2, grid.x3], y: [grid.y0, grid.y1, grid.y2, grid.y3] };
+  }
+  const g = makeDefaultGrid();
+  return { x: [g.x0,g.x1,g.x2,g.x3], y: [g.y0,g.y1,g.y2,g.y3] };
+}
+
+function gridPayload(grid) {
+  if (!grid || !Array.isArray(grid.x) || !Array.isArray(grid.y)) return makeDefaultGrid();
+  return { x0: grid.x[0], x1: grid.x[1], x2: grid.x[2], x3: grid.x[3], y0: grid.y[0], y1: grid.y[1], y2: grid.y[2], y3: grid.y[3] };
+}
+
+function updateConfirmEnabled() {
+  const ok = !!draft.templateId && draft.imageReady && draft.gridReady && (el("templateName").value.trim().length > 0);
+  el("btnConfirmTemplate").disabled = !ok;
+}
+
+function resetDraftState() {
+  draft.templateId = null;
+  draft.imageReady = false;
+  draft.gridReady = false;
+  draft.file = null;
+  el("gridEditorWrap").classList.add("hidden");
+  el("slicesPreviewWrap").classList.add("hidden");
+  el("slicePreview").innerHTML = "";
+  updateConfirmEnabled();
+}
+
+function showGridEditor(imageUrl, initialGrid) {
+  const canvas = el("gridCanvas");
+  const grid = gridForEditor(initialGrid);
+  editor = new GridEditor(canvas, imageUrl, grid);
+  editor.onChange = () => {
+    draft.gridReady = true;
+    updateConfirmEnabled();
+  };
+  draft.gridReady = true;
+  el("gridEditorWrap").classList.remove("hidden");
+}
+
+function showSlicesPreview(templateId) {
+  renderSlices(templateId);
+  el("slicesPreviewWrap").classList.remove("hidden");
 }
 
 function renderRoom(snapshot) {
@@ -328,50 +404,65 @@ el("btnCreate").addEventListener("click", async () => {
 
 el("btnRefreshTemplates").addEventListener("click", refreshTemplates);
 
-el("btnUpload").addEventListener("click", async () => {
-  if (!roomId) await ensureRoom();
-  const file = el("tplFile").files?.[0];
-  if (!file) return alert("Choose a file");
-  const name = el("tplName").value || file.name;
+el("templateName").addEventListener("input", updateConfirmEnabled);
 
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("name", name);
+el("fileInput").addEventListener("change", async () => {
+  const f = el("fileInput").files?.[0];
+  if (!f) return;
 
-  const r = await fetch("/api/templates/upload", { method: "POST", body: fd });
-  const j = await r.json();
-  if (!j.ok) return alert(j.error || "upload failed");
-  currentTemplateId = j.id;
-  selectedTemplateId = j.id;
-  setText("selectedTpl", selectedTemplateId);
-  el("editorWrap").classList.remove("hidden");
-  setText("tplStatus", `Template ${j.id} uploaded (${j.width}×${j.height})`);
+  draft.file = f;
+  draft.templateId = null;
+  draft.imageReady = false;
+  draft.gridReady = false;
+  el("slicesPreviewWrap").classList.add("hidden");
+  updateConfirmEnabled();
 
-  const imgUrl = `/api/templates/${j.id}/source?t=${Date.now()}`;
-  const canvas = el("gridCanvas");
-  editor = new GridEditor(canvas, imgUrl, j.grid);
-  editor.onChange = (grid) => {
-    // optional live status
-  };
+  if (!el("templateName").value.trim()) {
+    const base = f.name.replace(/\.[^.]+$/, "");
+    el("templateName").value = base;
+  }
 
-  await refreshTemplates();
+  setStatus("Uploading...");
+  el("btnConfirmTemplate").disabled = true;
+  try {
+    const j = await apiCreateTemplateDraft(f);
+    draft.templateId = j.templateId || j.id;
+    draft.imageReady = true;
+
+    const imgUrl = j.imageUrl || `/api/templates/${draft.templateId}/source?t=${Date.now()}`;
+    showGridEditor(imgUrl, j.defaultGrid || makeDefaultGrid());
+    setStatus("Adjust grid, then Confirm");
+    updateConfirmEnabled();
+  } catch (e) {
+    console.error(e);
+    setStatus("Choose an image…");
+    alert(e?.message || "upload_failed");
+    resetDraftState();
+  }
 });
 
-el("btnSaveGrid").addEventListener("click", async () => {
-  if (!currentTemplateId || !editor) return;
-  const grid = editor.getGrid();
-  await apiPost(`/api/templates/${currentTemplateId}/grid`, { grid });
-  setText("tplStatus", "Grid saved");
-  await refreshTemplates();
-});
-
-el("btnSlice").addEventListener("click", async () => {
-  if (!currentTemplateId) return;
-  setText("tplStatus", "Slicing...");
-  await apiPost(`/api/templates/${currentTemplateId}/slice`, {});
-  setText("tplStatus", "Sliced 9 cards");
-  renderSlices(currentTemplateId);
-  await refreshTemplates();
+el("btnConfirmTemplate").addEventListener("click", async () => {
+  if (el("btnConfirmTemplate").disabled) return;
+  if (!editor || !draft.templateId) return;
+  setStatus("Saving...");
+  el("btnConfirmTemplate").disabled = true;
+  const name = el("templateName").value.trim();
+  const grid = gridPayload(editor.getGrid());
+  try {
+    await apiFinalizeTemplate({ templateId: draft.templateId, name, grid });
+    selectedTemplateId = draft.templateId;
+    setText("selectedTpl", selectedTemplateId);
+    showSlicesPreview(draft.templateId);
+    toast("Saved ✅");
+    setStatus("Saved ✅");
+    await refreshTemplates();
+  } catch (e) {
+    console.error(e);
+    setStatus("Adjust grid, then Confirm");
+    alert(e?.message || "save_failed");
+  } finally {
+    updateConfirmEnabled();
+  }
 });
 
 el("btnStart").addEventListener("click", async () => {
@@ -396,6 +487,9 @@ socket.on("error_msg", ({ error }) => {
   console.error(error);
   alert(error);
 });
+
+setStatus("Choose an image…");
+updateConfirmEnabled();
 
 await ensureRoom();
 await refreshTemplates();

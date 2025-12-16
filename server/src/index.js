@@ -6,7 +6,7 @@ import multer from "multer";
 import { Server } from "socket.io";
 
 import { RoomManager, snapshotForHost, snapshotForPlayer } from "./rooms.js";
-import { listTemplates, createTemplateFromUpload, setTemplateGrid, sliceTemplate, renameTemplate, deleteTemplate, loadTemplate, getTemplatePaths } from "./templates.js";
+import { listTemplates, createTemplateFromUpload, createTemplateDraft, finalizeTemplate, setTemplateGrid, sliceTemplate, renameTemplate, deleteTemplate, loadTemplate, getTemplatePaths } from "./templates.js";
 import { giveToActiveWithMoved, endTurn } from "./gameLogic.js";
 
 const PORT = process.env.PORT || 5007;
@@ -114,6 +114,18 @@ app.get("/api/templates", (req, res) => {
   res.json({ templates: listTemplates() });
 });
 
+app.post("/api/templates/draft", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ ok: false, error: "file_required" });
+    const name = (req.body?.name || req.file?.originalname || "Template").toString();
+    const out = await createTemplateDraft(req.file.path, name);
+    try { fs.unlinkSync(req.file.path); } catch {}
+    res.json({ ok: true, ...out });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 app.post("/api/templates/upload", upload.single("file"), async (req, res) => {
   try {
     const name = (req.body?.name || req.file?.originalname || "Template").toString();
@@ -121,6 +133,15 @@ app.post("/api/templates/upload", upload.single("file"), async (req, res) => {
     // cleanup temp file
     try { fs.unlinkSync(req.file.path); } catch {}
     res.json({ ok: true, ...out });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
+app.post("/api/templates/:id/finalize", async (req, res) => {
+  try {
+    const out = await finalizeTemplate(req.params.id, { name: req.body?.name, grid: req.body?.grid });
+    res.json(out);
   } catch (e) {
     res.status(400).json({ ok: false, error: String(e?.message || e) });
   }
