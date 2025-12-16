@@ -23,13 +23,13 @@ export class RoomManager {
     setInterval(() => this.cleanup(), 60 * 1000).unref();
   }
 
-  createRoom() {
+  createRoom(templateId = null) {
     const id = nanoid(6).toUpperCase();
     const room = {
       id,
       phase: "lobby",
       host: { socketId: null },
-      templateId: null,
+      templateId: templateId || null,
 
       players: new Map(), // playerId -> player
       order: [],
@@ -265,9 +265,11 @@ export class RoomManager {
     if (!room) throw new Error("room_not_found");
     if (room.phase !== "lobby") throw new Error("bad_phase");
     if (room.players.size < 2) throw new Error("need_2_players");
-    room.templateId = templateId;
-    const t = loadTemplate(templateId);
+    const tplId = templateId || room.templateId;
+    room.templateId = tplId;
+    const t = loadTemplate(tplId);
     if (!t) throw new Error("template_not_found");
+    if (t.meta?.status && t.meta.status !== "ready") throw new Error("template_not_ready");
 
     // order randomized
     room.order = [...room.players.keys()];

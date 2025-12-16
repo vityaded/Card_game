@@ -8,6 +8,7 @@ const socket = io();
 const el = (id) => document.getElementById(id);
 
 let selectedTemplateId = null;
+let allTemplates = [];
 let editor = null;
 let roomSnapshot = null;
 
@@ -35,6 +36,9 @@ function setStatus(msg) {
   const n = el("uploadStatus");
   if (n) n.textContent = msg;
 }
+
+function show(id) { el(id)?.classList.remove("hidden"); }
+function hide(id) { el(id)?.classList.add("hidden"); }
 
 function absUrl(rel) {
   return `${location.origin}${rel}`;
@@ -108,9 +112,18 @@ async function apiDelete(url) {
   return j;
 }
 
+async function fetchTemplatesList() {
+  const list = await apiGet("/api/templates");
+  if (Array.isArray(list)) { allTemplates = list; return list; }
+  if (list && Array.isArray(list.templates)) { allTemplates = list.templates; return list.templates; }
+  allTemplates = [];
+  return [];
+}
+
 function renderTemplates(list) {
   const wrap = el("templatesList");
   wrap.innerHTML = "";
+  if (!Array.isArray(list)) return;
   for (const t of list) {
     const row = document.createElement("div");
     row.className = "border rounded p-2 flex items-center justify-between gap-2";
@@ -133,8 +146,7 @@ function renderTemplates(list) {
       const act = btn.dataset.act;
       const id = btn.dataset.id;
       if (act === "select") {
-        selectedTemplateId = id;
-        setText("selectedTpl", id);
+        setSelectedTemplate(id);
       } else if (act === "rename") {
         const name = prompt("New name:");
         if (!name) return;
@@ -148,6 +160,44 @@ function renderTemplates(list) {
       }
     });
   });
+}
+
+function tplCard(t) {
+  return `
+    <button class="text-left border rounded-2xl overflow-hidden hover:shadow transition bg-white"
+            data-tpl="${t.id}">
+      <div class="aspect-square bg-slate-100">
+        <img src="${t.thumbUrl}" class="w-full h-full object-cover" alt="${escapeHtml(t.name)}">
+      </div>
+      <div class="p-2">
+        <div class="font-semibold text-sm truncate">${escapeHtml(t.name)}</div>
+      </div>
+    </button>
+  `;
+}
+
+function renderTplGrid(list) {
+  const grid = el("tplGrid");
+  if (!grid) return;
+  if (!list || list.length === 0) {
+    grid.innerHTML = '<div class="col-span-full text-sm text-slate-500">No templates found</div>';
+    return;
+  }
+  grid.innerHTML = list.map(tplCard).join("");
+}
+
+async function openTplModal() {
+  show("tplModal");
+  el("tplSearch").value = "";
+  el("tplGrid").innerHTML = "<div class='col-span-full text-sm text-slate-500'>Loading...</div>";
+  try {
+    const list = await fetchTemplatesList();
+    renderTplGrid(list);
+  } catch (e) {
+    console.error(e);
+    el("tplGrid").innerHTML = '<div class="col-span-full text-sm text-rose-600">Failed to load templates</div>';
+  }
+  el("tplSearch").focus();
 }
 
 async function renderMyRooms(){
@@ -204,9 +254,8 @@ async function renderMyRooms(){
 }
 
 async function refreshTemplates() {
-
-  const j = await apiGet("/api/templates");
-  renderTemplates(j.templates);
+  const list = await fetchTemplatesList();
+  renderTemplates(list);
 }
 
 function renderSlices(templateId) {
@@ -276,6 +325,10 @@ function renderRoom(snapshot) {
   roomSnapshot = snapshot;
   setText("phase", snapshot.phase);
   setText("deckCount", String(snapshot.deckCount ?? "-"));
+  if (snapshot.templateId) {
+    selectedTemplateId = snapshot.templateId;
+    setText("selectedTpl", snapshot.templateId);
+  }
 
   const activeName = snapshot.players.find(p => p.id === snapshot.activePlayerId)?.name || "-";
   setText("active", activeName);
@@ -341,14 +394,6 @@ pt.querySelectorAll("button[data-remove]").forEach(btn => {
   });
 });
 
-  pt.querySelectorAll("button[data-remove]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const pid = btn.dataset.remove;
-      if (!confirm("Remove player and return cards to deck?")) return;
-      socket.emit("host_remove_player", { roomId, playerId: pid });
-    });
-  });
-
   // Hands view
   const hv = el("handsView");
   hv.innerHTML = "";
@@ -368,18 +413,43 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 }
 
-async function ensureRoom() {
+function updateRoomLinks() {
   if (!roomId) {
-    const j = await apiGet("/api/rooms/create");
-    roomId = j.roomId;
-  addMyRoom(roomId);
-    history.replaceState({}, "", `/host.html?roomId=${roomId}`);
+    setText("roomBadge", "Room: -");
+    el("playerLink").textContent = "-";
+    return;
   }
-  addMyRoom(roomId);
   setText("roomBadge", `Room: ${roomId}`);
   const playerUrl = `/room.html?roomId=${roomId}`;
   el("playerLink").innerHTML = `<a class="underline text-blue-700" href="${playerUrl}" target="_blank">${absUrl(playerUrl)}</a>`;
+}
+
+function setSelectedTemplate(tplId) {
+  selectedTemplateId = tplId || null;
+  setText("selectedTpl", selectedTemplateId || "-");
+}
+
+async function joinRoomById(id) {
+  const summary = await apiGet(`/api/rooms/${id}/summary`);
+  if (!summary.exists) throw new Error("room_not_found");
+  roomId = summary.roomId;
+  setSelectedTemplate(summary.templateId);
+  addMyRoom(roomId);
+  history.replaceState({}, "", `/host.html?roomId=${roomId}`);
+  updateRoomLinks();
   socket.emit("host_join", { roomId });
+}
+
+async function createRoomWithTemplate(templateId) {
+  if (!templateId) throw new Error("template_required");
+  const j = await apiPost("/api/rooms/create", { templateId });
+  roomId = j.roomId;
+  setSelectedTemplate(j.templateId || templateId);
+  addMyRoom(roomId);
+  history.replaceState({}, "", `/host.html?roomId=${roomId}`);
+  updateRoomLinks();
+  socket.emit("host_join", { roomId });
+  toast("Room created ✅");
 }
 
 el("btnCopyLink").addEventListener("click", async () => {
@@ -394,12 +464,43 @@ el("btnCopyLink").addEventListener("click", async () => {
   }
 });
 
-el("btnCreate").addEventListener("click", async () => {
-  const j = await apiGet("/api/rooms/create");
-  roomId = j.roomId;
-  addMyRoom(roomId);
-  history.replaceState({}, "", `/host.html?roomId=${roomId}`);
-  await ensureRoom();
+el("btnCreate").addEventListener("click", openTplModal);
+
+el("tplRefresh").addEventListener("click", async () => {
+  try {
+    const list = await fetchTemplatesList();
+    renderTplGrid(list);
+  } catch (e) {
+    console.error(e);
+    toast("Failed to refresh templates");
+  }
+});
+
+el("tplSearch").addEventListener("input", () => {
+  const q = el("tplSearch").value.trim().toLowerCase();
+  const filtered = allTemplates.filter(t => (t.name || "").toLowerCase().includes(q));
+  renderTplGrid(filtered);
+});
+
+el("tplGrid").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-tpl]");
+  if (!btn) return;
+  const tplId = btn.dataset.tpl;
+  hide("tplModal");
+  try {
+    await createRoomWithTemplate(tplId);
+  } catch (err) {
+    console.error(err);
+    alert(err?.message || "room_create_failed");
+  }
+});
+
+el("tplClose").addEventListener("click", () => hide("tplModal"));
+el("tplModal").addEventListener("click", (e) => {
+  if (e.target === el("tplModal") || e.target.classList.contains("bg-black/50")) hide("tplModal");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") hide("tplModal");
 });
 
 el("btnRefreshTemplates").addEventListener("click", refreshTemplates);
@@ -446,16 +547,15 @@ el("btnConfirmTemplate").addEventListener("click", async () => {
   if (!editor || !draft.templateId) return;
   setStatus("Saving...");
   el("btnConfirmTemplate").disabled = true;
-  const name = el("templateName").value.trim();
-  const grid = gridPayload(editor.getGrid());
-  try {
-    await apiFinalizeTemplate({ templateId: draft.templateId, name, grid });
-    selectedTemplateId = draft.templateId;
-    setText("selectedTpl", selectedTemplateId);
-    showSlicesPreview(draft.templateId);
-    toast("Saved ✅");
-    setStatus("Saved ✅");
-    await refreshTemplates();
+    const name = el("templateName").value.trim();
+    const grid = gridPayload(editor.getGrid());
+    try {
+      await apiFinalizeTemplate({ templateId: draft.templateId, name, grid });
+    setSelectedTemplate(draft.templateId);
+      showSlicesPreview(draft.templateId);
+      toast("Saved ✅");
+      setStatus("Saved ✅");
+      await refreshTemplates();
   } catch (e) {
     console.error(e);
     setStatus("Adjust grid, then Confirm");
@@ -466,6 +566,7 @@ el("btnConfirmTemplate").addEventListener("click", async () => {
 });
 
 el("btnStart").addEventListener("click", async () => {
+  if (!roomId) return alert("Create room first");
   if (!selectedTemplateId) return alert("Select template first");
   socket.emit("game_start", { roomId, templateId: selectedTemplateId });
 });
@@ -490,8 +591,20 @@ socket.on("error_msg", ({ error }) => {
 
 setStatus("Choose an image…");
 updateConfirmEnabled();
+updateRoomLinks();
+setSelectedTemplate(selectedTemplateId);
 
-await ensureRoom();
+if (roomId) {
+  try {
+    await joinRoomById(roomId);
+  } catch (e) {
+    console.error(e);
+    toast("Room not found");
+    roomId = null;
+    updateRoomLinks();
+  }
+}
+
 await refreshTemplates();
 await renderMyRooms();
 setInterval(() => renderMyRooms().catch(()=>{}), 2500);

@@ -100,6 +100,27 @@
     </div>
   </div>
 
+  <div id="tplModal" class="fixed inset-0 z-[80] hidden">
+    <div class="absolute inset-0 bg-black/50"></div>
+
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div class="text-xl font-extrabold">Choose template</div>
+          <button id="tplClose" class="px-3 py-2 rounded-2xl bg-slate-100">Close</button>
+        </div>
+
+        <div class="mt-3 flex gap-2">
+          <input id="tplSearch" class="w-full border rounded-2xl px-3 py-2"
+                 placeholder="Search templates..." />
+          <button id="tplRefresh" class="px-3 py-2 rounded-2xl bg-slate-900 text-white">Refresh</button>
+        </div>
+
+        <div id="tplGrid" class="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-h-[70vh] overflow-auto"></div>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="/ui-grid-editor.js"></script>
   <script type="module" src="/app-host.js"></script>
 </body>
